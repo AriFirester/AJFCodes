@@ -1,0 +1,176 @@
+import java.awt.Color;
+
+public class EdgeDetector 
+{
+	// truncate color component to be between 0 and 255
+    public static int truncate(int a) 
+    {
+        if      (a <   0) return 0;
+        else if (a > 255) return 255;
+        else              return a;
+    }
+    
+    public static double avg_pix(Picture p, int x, int y, int wd, int ht)
+    {
+    	double av = 0.0, ct = 0.0;
+    	Color cc;
+    	for (int i = -1; i <= 1; i++) if ((x+i >= 0) && (x+i < wd))
+    		for (int j = -1; j <= 1; j++) if ((y+j >=0) && (y+j < ht))
+    		{
+    			cc = p.get(x+i, y+j);
+    			av += (double) cc.getRed();
+    			ct += 1.0;
+    		}
+    	return (av / ct);
+    }
+    
+    
+    public static double min_pix(Picture p, int x, int y, int wd, int ht)
+    {
+    	double mn = 1000.0, v = 0.0;
+    	Color cc;
+    	for (int i = -1; i <= 1; i++) if ((x+i >= 0) && (x+i < wd))
+    		for (int j = -1; j <= 1; j++) if ((y+j >=0) && (y+j < ht))
+    		{
+    			cc = p.get(x+i, y+j);
+    			v = (double) cc.getRed();
+    			if (v < mn) mn = v;
+    		}
+    	return mn;
+    }
+    
+    
+
+    public static void main(String[] args) 
+    {
+
+        int[][] filter1 = 
+        {
+            { -1,  0,  1 },
+            { -2,  0,  2 },
+            { -1,  0,  1 }
+        };
+
+        int[][] filter2 = 
+        {
+            {  1,  2,  1 },
+            {  0,  0,  0 },
+            { -1, -2, -1 }
+        };
+
+        Picture picture0 = new Picture(args[0]);
+        int width    = picture0.width();
+        int height   = picture0.height();
+        Picture picture1 = new Picture(width, height);
+
+        double r, g, b;
+        Color cc;
+        int threshold = 180;
+
+        for (int y = 1; y < height - 1; y++) 
+        {
+            for (int x = 1; x < width - 1; x++) 
+            {
+
+                // get 3-by-3 array of colors in neighborhood
+                int[][] gray = new int[3][3];
+                for (int i = 0; i < 3; i++) {
+                    for (int j = 0; j < 3; j++) {
+                    	cc = picture0.get(x-1+i, y-1+j);
+                    	 r = cc.getRed();
+                         g = cc.getGreen();
+                         b = cc.getBlue();
+                         gray[i][j] = (int)  (.299*r + .587*g + .114*b);
+                        
+                    }
+                }
+
+                // apply filter
+                int gray1 = 0, gray2 = 0;
+                for (int i = 0; i < 3; i++) 
+                {
+                    for (int j = 0; j < 3; j++) 
+                    {
+                        gray1 += gray[i][j] * filter1[i][j];
+                        gray2 += gray[i][j] * filter2[i][j];
+                    }
+                }
+                int magnitude = 255 - truncate((int) Math.sqrt(gray1*gray1 + gray2*gray2));
+                if (magnitude > threshold) magnitude = 255;
+                Color grayscale = new Color(magnitude, magnitude, magnitude);
+                picture1.set(x, y, grayscale);
+            }
+        }
+        
+        int grid_step = 17, nx, ny, area;
+        int bxlo = width, bxhi = 0, bylo = height, byhi = 0;
+        double angle_step = 10, rad_step = 1, rad = 0, old_rad = 0;
+        boolean found, out, good_shape = true;
+        double dark_thr = 200, pct_thr = 0.67, rad_max = 200;
+        
+        for (int y = 0; y < height; y += grid_step) 
+        {
+            for (int x = 0; x < width; x += grid_step) 
+            {
+            	if (avg_pix(picture1, x, y, width, height) > dark_thr)
+            	{
+	            	good_shape = true;
+	            	bxlo = width; bxhi = 0; bylo = height; byhi = 0;
+	            	
+	            	for (double th = 0.0; th < 360.0; th += angle_step)
+	            	{
+	            		found = out = false; rad = 0.0;
+	            		while ((!found) && (!out) && good_shape)
+	            		{
+	            			rad += rad_step;
+	            			if (rad < rad_max)
+	            			{
+		            			nx = x + (int)(rad * Math.cos(Math.toRadians(th)));
+		            			ny = y + (int)(rad * Math.sin(Math.toRadians(th)));
+		            			
+		            			if ((nx < 0) || (nx >= width) || (ny < 0) || (ny >= height)) out = true;
+		            			if (!out)
+		        				{	
+		            				if (min_pix(picture1, nx, ny, width, height) < dark_thr)
+		        					{
+		        						found = true;
+		        						if (nx < bxlo) bxlo = nx;
+		        						if (nx > bxhi) bxhi = nx;
+		        						if (ny < bylo) bylo = ny;
+		        						if (ny > byhi) byhi = ny;
+		        						if ((th > 0.0) && (Math.abs(rad/old_rad - 1.0) > pct_thr)) good_shape = false;
+		        						old_rad = rad;
+		        					}
+		        				}
+	            			}
+	            			else out = true;
+	            		}
+	            		if (out) good_shape = false;
+	            	}
+	            	area = (bxhi - bxlo) * (byhi - bylo);	
+	            	if (good_shape && (area > 10))
+	            	{
+            			for (int i = bxlo; i <= bxhi; i++) 
+            			{
+            				picture0.set(i,  bylo,  Color.GREEN);
+            				picture0.set(i,  byhi,  Color.GREEN);
+            				picture1.set(i,  bylo,  Color.GREEN);
+            				picture1.set(i,  byhi,  Color.GREEN);
+            			}
+            			for (int j = bylo; j <= byhi; j++) 
+            			{
+            				picture0.set(bxlo, j,  Color.GREEN);
+            				picture0.set(bxhi, j,  Color.GREEN);
+            				picture1.set(bxlo, j,  Color.GREEN);
+            				picture1.set(bxhi, j,  Color.GREEN);
+            			}
+	            	}
+            	}
+            }
+        }
+        
+        picture0.show();
+        picture1.show();
+    }
+
+}
